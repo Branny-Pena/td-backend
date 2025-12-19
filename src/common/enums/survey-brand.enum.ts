@@ -1,0 +1,6 @@
+export enum SurveyBrand {
+  MERCEDES_BENZ = 'MERCEDES-BENZ',
+  ANDES_MOTOR = 'ANDES MOTOR',
+  STELLANTIS = 'STELLANTIS',
+}
+

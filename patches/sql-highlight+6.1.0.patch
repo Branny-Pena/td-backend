@@ -1,0 +1,17 @@
+diff --git a/node_modules/sql-highlight/lib/escapeHtml.js b/node_modules/sql-highlight/lib/escapeHtml.js
+new file mode 100644
+index 0000000..77c5958
+--- /dev/null
++++ b/node_modules/sql-highlight/lib/escapeHtml.js
+@@ -0,0 +1,11 @@
++module.exports = function escapeHtml(str) {
++  if (str === undefined || str === null) {
++    return '';
++  }
++  return String(str)
++    .replace(/&/g, '&amp;')
++    .replace(/</g, '&lt;')
++    .replace(/>/g, '&gt;')
++    .replace(/"/g, '&quot;')
++    .replace(/'/g, '&#039;');
++};
