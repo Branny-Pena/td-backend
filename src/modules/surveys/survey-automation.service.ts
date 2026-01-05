@@ -1,8 +1,15 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { TestDriveForm } from '../test-drive-forms/entities/test-drive-form.entity';
-import { SurveyResponse, SurveyResponseStatus } from './entities/survey-response.entity';
+import {
+  SurveyResponse,
+  SurveyResponseStatus,
+} from './entities/survey-response.entity';
 import { SurveyVersion } from './entities/survey-version.entity';
 import { SurveyBrand } from '../../common/enums/survey-brand.enum';
 import { Survey, SurveyStatus } from './entities/survey.entity';
@@ -32,7 +39,11 @@ export class SurveyAutomationService {
     if (existing) return { response: existing, created: false };
 
     const survey = await this.surveysRepository.findOne({
-      where: { brand: params.brand, isActive: true, status: SurveyStatus.READY },
+      where: {
+        brand: params.brand,
+        isActive: true,
+        status: SurveyStatus.READY,
+      },
       order: { createdAt: 'DESC' },
     });
     if (!survey) {

@@ -95,7 +95,11 @@ Entities and relationships (see also `API.md` “Models & Relationships”):
 - CurrentLocation 1:N TestDriveForm
 - TestDriveForm has optional 1:1 DigitalSignature (cascades on save)
 - TestDriveForm has optional 1:1 ReturnState (cascades on save)
-- ReturnState 1:N Image (images deleted when returnState deleted)
+- ReturnState has:
+  - 1:N `images` (vehicle photos only; role = `vehicle`)
+  - 1:1 `mileageImage` (role = `mileage`)
+  - 1:1 `fuelLevelImage` (role = `fuel_level`)
+- Image N:1 ReturnState (`returnStateId` is **NOT NULL**, deleted when returnState is deleted)
 - Surveys:
   - Survey 1:N SurveyVersion
   - SurveyVersion 1:N SurveyQuestion
@@ -119,13 +123,27 @@ The survey system is versioned and designed for “template + responses”:
   - Any “active survey” retrieval must return only `status=ready` (plus `isActive=true`).
 
 ## Test Drive Form Behaviors
-- `TestDriveForm.status`: `draft | pending | submitted`.
-- On transition to `submitted` or `pending`, the backend triggers automation:
+- `TestDriveForm.status`: `draft | submitted`.
+- `TestDriveForm.currentStep`: `CUSTOMER_DATA | VEHICLE_DATA | SIGNATURE_DATA | VALUATION_DATA | VEHICLE_RETURN_DATA | FINAL_CONFIRMATION`.
+- If `status = submitted`, the backend forces `currentStep = FINAL_CONFIRMATION`.
+- A form can be created from zero: `customer`, `vehicle`, and `location` are nullable until they are filled in later steps.
+- If `currentStep = FINAL_CONFIRMATION`, the backend forces `status = submitted`.
+- On transition to `submitted`, the backend triggers automation:
   - It attempts to create a `SurveyResponse` for the form’s `brand`
   - It sends an email to the customer with the response id (and a URL if configured)
   - Implementation lives in `src/modules/test-drive-forms/test-drive-forms.service.ts`
   - Survey selection is “most recent created” survey for that brand, filtered by `isActive=true` and `status=ready`
+- Survey email is skipped if the form has no `customer` or the customer has no `email` (this is expected for “create from zero”).
 - PDF generation endpoint exists and uses Puppeteer to render Spanish HTML into PDF.
+
+## Return State + Images (Important Implementation Notes)
+- “Fuel level” and “final mileage” are **two separate images**, stored as relations to the `images` entity:
+  - `ReturnState.mileageImage` ↔ `return_states.mileage_image_id`
+  - `ReturnState.fuelLevelImage` ↔ `return_states.fuel_level_image_id`
+- Additional return-state vehicle photos live in `ReturnState.images` as `Image.role = vehicle`.
+- The `images.returnState` relation is **non-nullable** in the DB (`returnStateId NOT NULL`).
+  - When upserting an existing image, always keep `image.returnState` set before saving; otherwise TypeORM can attempt to set `returnStateId = null` and PostgreSQL will throw `23502`.
+- To avoid TypeORM “Cyclic dependency: Image” persistence errors, `ReturnState.images` is configured with `persistence: false` and images are saved/deleted explicitly via `imagesRepository`.
 
 ## API Documentation Contract
 - `API.md` is the canonical endpoint reference (routes, methods, payloads, response shapes).
@@ -134,6 +152,12 @@ The survey system is versioned and designed for “template + responses”:
 
 ## Known Gotchas / Operational Notes
 - Port mismatch can cause confusion: `src/main.ts` defaults to port `3001`. Keep `API.md` base URL aligned.
+- Status enum migrations:
+  - `pending` was removed from `TestDriveForm.status` (only `draft | submitted` remain).
+  - `src/modules/test-drive-forms/test-drive-forms.service.ts` contains an `onModuleInit()` data fix that safely converts legacy `"pending"` rows using a text-cast filter (`"status"::text = 'pending'`) so the app won’t crash even after the DB enum changes.
+- Create-from-zero schema drift:
+  - `customerId`, `vehicleId`, `locationId` were made nullable (entity + DTO).
+  - `onModuleInit()` attempts to drop lingering NOT NULL constraints on existing DBs (supports both `customerId` and `customer_id` column naming).
 - `sql-highlight` patch:
   - There is a runtime issue where `typeorm` requires `sql-highlight` which may miss `./escapeHtml`.
   - The fix is implemented via `patch-package` in `patches/sql-highlight+6.1.0.patch`.
@@ -144,7 +168,8 @@ The survey system is versioned and designed for “template + responses”:
 ## Current “Actual Context” (What’s Already Implemented)
 - Shared brand enum exists at `src/common/enums/survey-brand.enum.ts` and is used across surveys and test drive forms.
 - Test drive forms include a `brand` column (enum) and `GET /test-drive-forms` supports filtering via query params.
+- Test drive forms support “wizard” progress via `currentStep` (DB column `current_step`) and enforce `submitted` ↔ `FINAL_CONFIRMATION`.
+- Test drive forms can be created with no `customerId`, `vehicleId`, or `locationId` initially; these can be attached later via PATCH.
 - Surveys include a publishing status (`draft|ready`), and “active survey by brand” endpoints only return `ready` surveys.
 - Survey submission bug previously caused `survey_answers.responseId` to become null; the submit flow avoids that by not re-saving the response entity in a way that breaks relations.
 - Survey response retrieval endpoints include **sanitized customer info only** (id, name, email, phone) and must not leak sensitive fields (e.g., DNI).
-

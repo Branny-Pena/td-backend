@@ -1,13 +1,13 @@
-import { IsArray, IsInt, IsNotEmpty, IsOptional, IsString, Min } from 'class-validator';
+import { IsArray, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class CreateReturnStateDto {
-  @IsInt()
-  @Min(0)
-  finalMileage: number;
+  @IsString()
+  @IsNotEmpty()
+  mileageImageUrl: string;
 
-  @IsInt()
-  @Min(0)
-  fuelLevelPercentage: number;
+  @IsString()
+  @IsNotEmpty()
+  fuelLevelImageUrl: string;
 
   @IsOptional()
   @IsArray()

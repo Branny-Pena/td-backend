@@ -41,4 +41,3 @@ export class SurveyResponse extends AuditableEntity {
   @OneToMany(() => SurveyAnswer, (answer) => answer.response)
   answers: SurveyAnswer[];
 }
-

@@ -2,7 +2,6 @@ import { Type } from 'class-transformer';
 import {
   IsEnum,
   IsInt,
-  IsNotEmpty,
   IsOptional,
   IsString,
   IsUUID,
@@ -13,6 +12,7 @@ import {
 import {
   EstimatedPurchaseDateOption,
   TestDriveFormStatus,
+  TestDriveFormStep,
 } from '../entities/test-drive-form.entity';
 import { ReturnStatePayloadDto } from './return-state-payload.dto';
 import { SurveyBrand } from '../../../common/enums/survey-brand.enum';
@@ -22,17 +22,17 @@ export class CreateTestDriveFormDto {
   @IsEnum(SurveyBrand)
   brand?: SurveyBrand;
 
+  @IsOptional()
   @IsUUID()
-  @IsNotEmpty()
-  customerId: string;
+  customerId?: string | null;
 
+  @IsOptional()
   @IsUUID()
-  @IsNotEmpty()
-  vehicleId: string;
+  vehicleId?: string | null;
 
+  @IsOptional()
   @IsUUID()
-  @IsNotEmpty()
-  locationId: string;
+  locationId?: string | null;
 
   @IsOptional()
   @IsString()
@@ -60,4 +60,8 @@ export class CreateTestDriveFormDto {
   @IsOptional()
   @IsEnum(TestDriveFormStatus)
   status?: TestDriveFormStatus;
+
+  @IsOptional()
+  @IsEnum(TestDriveFormStep)
+  currentStep?: TestDriveFormStep;
 }

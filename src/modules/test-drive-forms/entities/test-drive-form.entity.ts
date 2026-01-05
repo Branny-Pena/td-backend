@@ -16,8 +16,16 @@ import { SurveyBrand } from '../../../common/enums/survey-brand.enum';
 
 export enum TestDriveFormStatus {
   DRAFT = 'draft',
-  PENDING = 'pending',
   SUBMITTED = 'submitted',
+}
+
+export enum TestDriveFormStep {
+  CUSTOMER_DATA = 'CUSTOMER_DATA',
+  VEHICLE_DATA = 'VEHICLE_DATA',
+  SIGNATURE_DATA = 'SIGNATURE_DATA',
+  VALUATION_DATA = 'VALUATION_DATA',
+  VEHICLE_RETURN_DATA = 'VEHICLE_RETURN_DATA',
+  FINAL_CONFIRMATION = 'FINAL_CONFIRMATION',
 }
 
 export enum EstimatedPurchaseDateOption {
@@ -38,20 +46,29 @@ export class TestDriveForm extends AuditableEntity {
   })
   brand: SurveyBrand;
 
-  @ManyToOne(() => Customer, (customer) => customer.testDriveForms, { nullable: false })
-  customer: Customer;
+  @ManyToOne(() => Customer, (customer) => customer.testDriveForms, {
+    nullable: true,
+    onDelete: 'SET NULL',
+  })
+  customer: Customer | null;
 
   @ManyToOne(() => Vehicle, (vehicle) => vehicle.testDriveForms, {
-    nullable: false,
+    nullable: true,
+    onDelete: 'SET NULL',
   })
-  vehicle: Vehicle;
+  vehicle: Vehicle | null;
 
   @ManyToOne(() => CurrentLocation, (location) => location.testDriveForms, {
-    nullable: false,
+    nullable: true,
+    onDelete: 'SET NULL',
   })
-  location: CurrentLocation;
+  location: CurrentLocation | null;
 
-  @OneToOne(() => DigitalSignature, { cascade: true, nullable: true, eager: true })
+  @OneToOne(() => DigitalSignature, {
+    cascade: true,
+    nullable: true,
+    eager: true,
+  })
   @JoinColumn()
   signature: DigitalSignature | null;
 
@@ -83,4 +100,12 @@ export class TestDriveForm extends AuditableEntity {
     default: TestDriveFormStatus.DRAFT,
   })
   status: TestDriveFormStatus;
+
+  @Column({
+    name: 'current_step',
+    type: 'enum',
+    enum: TestDriveFormStep,
+    default: TestDriveFormStep.CUSTOMER_DATA,
+  })
+  currentStep: TestDriveFormStep;
 }

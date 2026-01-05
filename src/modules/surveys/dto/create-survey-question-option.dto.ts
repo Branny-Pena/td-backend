@@ -13,4 +13,3 @@ export class CreateSurveyQuestionOptionDto {
   @IsInt()
   orderIndex?: number;
 }
-

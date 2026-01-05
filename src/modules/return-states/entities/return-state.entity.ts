@@ -1,8 +1,8 @@
 import {
-  Column,
   Entity,
-  OneToMany,
+  JoinColumn,
   OneToOne,
+  OneToMany,
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { AuditableEntity } from '../../../common/entities/auditable.entity';
@@ -14,13 +14,21 @@ export class ReturnState extends AuditableEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'final_mileage', type: 'int' })
-  finalMileage: number;
+  @OneToOne(() => Image, {
+    eager: true,
+    nullable: true,
+  })
+  @JoinColumn({ name: 'mileage_image_id' })
+  mileageImage?: Image | null;
 
-  @Column({ name: 'fuel_level_percentage', type: 'int' })
-  fuelLevelPercentage: number;
+  @OneToOne(() => Image, {
+    eager: true,
+    nullable: true,
+  })
+  @JoinColumn({ name: 'fuel_level_image_id' })
+  fuelLevelImage?: Image | null;
 
-  @OneToMany(() => Image, (image) => image.returnState, { cascade: true })
+  @OneToMany(() => Image, (image) => image.returnState, { persistence: false })
   images: Image[];
 
   @OneToOne(() => TestDriveForm, (form) => form.returnState)

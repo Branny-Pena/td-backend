@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, ParseEnumPipe, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseEnumPipe,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { StartSurveyResponseDto } from './dto/start-survey-response.dto';
 import { SubmitSurveyAnswersDto } from './dto/submit-survey-answers.dto';
 import { SurveyResponsesService } from './survey-responses.service';
@@ -10,7 +18,10 @@ export class SurveyResponsesController {
 
   @Get()
   findAll(
-    @Query('status', new ParseEnumPipe(SurveyResponseStatus, { optional: true }))
+    @Query(
+      'status',
+      new ParseEnumPipe(SurveyResponseStatus, { optional: true }),
+    )
     status?: SurveyResponseStatus,
     @Query('surveyId') surveyId?: string,
     @Query('surveyVersionId') surveyVersionId?: string,

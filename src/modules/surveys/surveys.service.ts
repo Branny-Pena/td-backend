@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CreateSurveyDto } from './dto/create-survey.dto';
@@ -37,9 +41,12 @@ export class SurveysService {
     const survey = await this.findOne(id);
 
     if (survey.status === SurveyStatus.READY) {
-      const triesToChangeName = typeof dto.name === 'string' && dto.name !== survey.name;
-      const triesToChangeBrand = dto.brand != null && dto.brand !== survey.brand;
-      const triesToChangeStatus = dto.status != null && dto.status !== SurveyStatus.READY;
+      const triesToChangeName =
+        typeof dto.name === 'string' && dto.name !== survey.name;
+      const triesToChangeBrand =
+        dto.brand != null && dto.brand !== survey.brand;
+      const triesToChangeStatus =
+        dto.status != null && dto.status !== SurveyStatus.READY;
       if (triesToChangeName || triesToChangeBrand || triesToChangeStatus) {
         throw new BadRequestException('Survey is ready and cannot be modified');
       }

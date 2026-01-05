@@ -42,7 +42,10 @@ export class VehiclesService {
     }
   }
 
-  async findByQuery(licensePlate?: string, vinNumber?: string): Promise<Vehicle> {
+  async findByQuery(
+    licensePlate?: string,
+    vinNumber?: string,
+  ): Promise<Vehicle> {
     const where: any[] = [];
 
     if (licensePlate) where.push({ licensePlate: licensePlate });
@@ -56,7 +59,9 @@ export class VehiclesService {
     return vehicle;
   }
 
-  async findOrCreate(dto: CreateVehicleDto): Promise<{vehicle: Vehicle, created: boolean}> {
+  async findOrCreate(
+    dto: CreateVehicleDto,
+  ): Promise<{ vehicle: Vehicle; created: boolean }> {
     const where: any[] = [];
 
     if (dto.licensePlate) where.push({ licensePlate: dto.licensePlate });
@@ -71,6 +76,6 @@ export class VehiclesService {
       registerStatus: VehicleRegisterStatus.IN_PROGRESS,
     });
     vehicle = await this.vehiclesRepository.save(vehicle);
-    return { vehicle: vehicle, created: true }
+    return { vehicle: vehicle, created: true };
   }
 }

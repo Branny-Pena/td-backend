@@ -207,9 +207,10 @@ Important:
 ## Frontend Workflow (Render & Submit a Survey)
 
 ### Automatic behavior from Test Drive Forms (Backend)
-When a `TestDriveForm` is created/updated with `status = pending` or `submitted`, the backend:
+When a `TestDriveForm` is created/updated with `status = submitted`, the backend:
 1) Auto-creates a `SurveyResponse` (status `started`) for the form `brand` (fallback: `SURVEY_DEFAULT_BRAND`) and emails a public link to answer it: `${FRONTEND_BASE_URL}/survey/{surveyResponseId}`.
 2) Sends an email to the customer with the **survey response ID** (for now; later this can be replaced by a link)
+   - If the response already exists, it is reused and the email is still sent.
 
 Implications for the frontend:
 - You can still call `POST /survey-responses` (it will return the existing response for the same `(surveyVersionId, testDriveFormIdentifier)`).

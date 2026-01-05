@@ -9,4 +9,3 @@ export class StartSurveyResponseDto {
   @IsNotEmpty()
   testDriveFormIdentifier: string;
 }
-

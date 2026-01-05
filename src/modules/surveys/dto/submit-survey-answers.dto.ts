@@ -34,4 +34,3 @@ export class SubmitSurveyAnswersDto {
   @Type(() => SubmitSurveyAnswerItemDto)
   answers: SubmitSurveyAnswerItemDto[];
 }
-

@@ -19,4 +19,3 @@ export class SurveyVersionsController {
     return this.versionsService.getFullVersion(versionId);
   }
 }
-

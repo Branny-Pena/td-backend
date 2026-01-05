@@ -1,4 +1,11 @@
-import { IsBoolean, IsInt, IsNotEmpty, IsOptional, IsString, Min } from 'class-validator';
+import {
+  IsBoolean,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Min,
+} from 'class-validator';
 
 export class CreateSurveyVersionDto {
   @IsInt()
@@ -14,4 +21,3 @@ export class CreateSurveyVersionDto {
   @IsString()
   notes?: string;
 }
-

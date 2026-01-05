@@ -2,6 +2,12 @@ import { Column, Entity, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
 import { AuditableEntity } from '../../../common/entities/auditable.entity';
 import { ReturnState } from '../../return-states/entities/return-state.entity';
 
+export enum ReturnStateImageRole {
+  VEHICLE = 'vehicle',
+  MILEAGE = 'mileage',
+  FUEL_LEVEL = 'fuel_level',
+}
+
 @Entity('images')
 export class Image extends AuditableEntity {
   @PrimaryGeneratedColumn('uuid')
@@ -9,6 +15,13 @@ export class Image extends AuditableEntity {
 
   @Column()
   url: string;
+
+  @Column({
+    type: 'enum',
+    enum: ReturnStateImageRole,
+    default: ReturnStateImageRole.VEHICLE,
+  })
+  role: ReturnStateImageRole;
 
   @ManyToOne(() => ReturnState, (returnState) => returnState.images, {
     onDelete: 'CASCADE',

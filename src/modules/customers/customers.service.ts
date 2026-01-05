@@ -50,13 +50,15 @@ export class CustomersService {
     return customer;
   }
 
-  async findOrCreateByDni(dto: CreateCustomerDto): Promise<{customer: Customer, created: boolean}> {
+  async findOrCreateByDni(
+    dto: CreateCustomerDto,
+  ): Promise<{ customer: Customer; created: boolean }> {
     let customer = await this.customerRepository.findOneBy({ dni: dto.dni });
     if (customer) {
-      return {customer, created: false}
+      return { customer, created: false };
     }
     customer = this.customerRepository.create(dto);
     customer = await this.customerRepository.save(customer);
-    return {customer, created: true};
+    return { customer, created: true };
   }
 }

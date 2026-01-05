@@ -1,10 +1,17 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CreateSurveyQuestionDto } from './dto/create-survey-question.dto';
 import { CreateSurveyVersionDto } from './dto/create-survey-version.dto';
 import { Survey, SurveyStatus } from './entities/survey.entity';
-import { SurveyQuestion, SurveyQuestionType } from './entities/survey-question.entity';
+import {
+  SurveyQuestion,
+  SurveyQuestionType,
+} from './entities/survey-question.entity';
 import { SurveyQuestionOption } from './entities/survey-question-option.entity';
 import { SurveyResponse } from './entities/survey-response.entity';
 import { SurveyVersion } from './entities/survey-version.entity';
@@ -99,9 +106,10 @@ export class SurveyVersionsService {
     if (version.survey.status === SurveyStatus.READY) {
       throw new BadRequestException('Survey is ready and cannot be modified');
     }
-    const hasResponses = (await this.responsesRepository.count({
-      where: { surveyVersion: { id: version.id } },
-    })) > 0;
+    const hasResponses =
+      (await this.responsesRepository.count({
+        where: { surveyVersion: { id: version.id } },
+      })) > 0;
     if (hasResponses) {
       throw new BadRequestException(
         'Survey version is immutable because it already has responses',
@@ -136,8 +144,10 @@ export class SurveyVersionsService {
       label: dto.label,
       isRequired: dto.isRequired,
       orderIndex: dto.orderIndex,
-      minValue: dto.type === SurveyQuestionType.NUMBER ? dto.minValue ?? null : null,
-      maxValue: dto.type === SurveyQuestionType.NUMBER ? dto.maxValue ?? null : null,
+      minValue:
+        dto.type === SurveyQuestionType.NUMBER ? (dto.minValue ?? null) : null,
+      maxValue:
+        dto.type === SurveyQuestionType.NUMBER ? (dto.maxValue ?? null) : null,
     });
 
     if (dto.options?.length) {
@@ -165,7 +175,8 @@ export class SurveyVersionsService {
       .addOrderBy('option.label', 'ASC')
       .getOne();
 
-    if (!version) throw new NotFoundException(`Survey version ${versionId} not found`);
+    if (!version)
+      throw new NotFoundException(`Survey version ${versionId} not found`);
     return version;
   }
 }

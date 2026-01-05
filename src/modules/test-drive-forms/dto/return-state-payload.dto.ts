@@ -1,21 +1,13 @@
-import { Type } from 'class-transformer';
-import {
-  IsArray,
-  IsInt,
-  IsOptional,
-  IsString,
-  Min,
-  ValidateNested,
-} from 'class-validator';
+import { IsArray, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class ReturnStatePayloadDto {
-  @IsInt()
-  @Min(0)
-  finalMileage: number;
+  @IsString()
+  @IsNotEmpty()
+  mileageImageUrl: string;
 
-  @IsInt()
-  @Min(0)
-  fuelLevelPercentage: number;
+  @IsString()
+  @IsNotEmpty()
+  fuelLevelImageUrl: string;
 
   @IsOptional()
   @IsArray()

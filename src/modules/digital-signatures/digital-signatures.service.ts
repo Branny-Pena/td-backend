@@ -22,7 +22,9 @@ export class DigitalSignaturesService {
   }
 
   async findOne(id: string): Promise<DigitalSignature> {
-    const signature = await this.signaturesRepository.findOne({ where: { id } });
+    const signature = await this.signaturesRepository.findOne({
+      where: { id },
+    });
     if (!signature) {
       throw new NotFoundException(`Digital signature ${id} not found`);
     }

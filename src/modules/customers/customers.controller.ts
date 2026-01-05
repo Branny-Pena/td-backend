@@ -23,7 +23,8 @@ export class CustomersController {
 
   @Post('/find-or-create')
   async findOrCreate(@Body() dto: CreateCustomerDto) {
-    const { customer, created } = await this.customersService.findOrCreateByDni(dto);
+    const { customer, created } =
+      await this.customersService.findOrCreateByDni(dto);
     return { customer, created };
   }
 
@@ -48,5 +49,5 @@ export class CustomersController {
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.customersService.remove(id);
-  } 
+  }
 }

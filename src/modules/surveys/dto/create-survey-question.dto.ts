@@ -45,4 +45,3 @@ export class CreateSurveyQuestionDto {
   @Type(() => CreateSurveyQuestionOptionDto)
   options?: CreateSurveyQuestionOptionDto[];
 }
-

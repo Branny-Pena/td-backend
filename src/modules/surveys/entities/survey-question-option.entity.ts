@@ -29,4 +29,3 @@ export class SurveyQuestionOption extends AuditableEntity {
   @Column({ name: 'order_index', type: 'int', nullable: true })
   orderIndex: number | null;
 }
-

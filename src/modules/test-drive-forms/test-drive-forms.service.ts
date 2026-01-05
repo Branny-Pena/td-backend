@@ -1,11 +1,17 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnModuleInit,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as puppeteer from 'puppeteer';
 import { DigitalSignature } from '../digital-signatures/entities/digital-signature.entity';
 import { CurrentLocation } from '../locations/entities/current-location.entity';
 import { ReturnState } from '../return-states/entities/return-state.entity';
-import { Image } from '../images/entities/image.entity';
+import { Image, ReturnStateImageRole } from '../images/entities/image.entity';
 import { Vehicle } from '../vehicles/entities/vehicle.entity';
 import { Customer } from '../customers/entities/customers.entity';
 import { MailerService } from '../mailer/mailer.service';
@@ -14,10 +20,15 @@ import { SurveyAutomationService } from '../surveys/survey-automation.service';
 import { CreateTestDriveFormDto } from './dto/create-test-drive-form.dto';
 import { FindTestDriveFormsQueryDto } from './dto/find-test-drive-forms-query.dto';
 import { UpdateTestDriveFormDto } from './dto/update-test-drive-form.dto';
-import { TestDriveForm, TestDriveFormStatus } from './entities/test-drive-form.entity';
+import {
+  TestDriveForm,
+  TestDriveFormStatus,
+  TestDriveFormStep,
+} from './entities/test-drive-form.entity';
+import { ReturnStatePayloadDto } from './dto/return-state-payload.dto';
 
 @Injectable()
-export class TestDriveFormsService {
+export class TestDriveFormsService implements OnModuleInit {
   private readonly logger = new Logger(TestDriveFormsService.name);
 
   constructor(
@@ -39,8 +50,65 @@ export class TestDriveFormsService {
     private readonly surveyAutomationService: SurveyAutomationService,
   ) {}
 
+  async onModuleInit(): Promise<void> {
+    await this.formsRepository
+      .createQueryBuilder()
+      .update(TestDriveForm)
+      .set({ status: TestDriveFormStatus.SUBMITTED })
+      // Use a text cast so this works even after the enum no longer contains "pending".
+      .where('"status"::text = :pending', { pending: 'pending' })
+      .execute();
+
+    // Make initial-step creation possible even on existing DBs that still have NOT NULL columns.
+    try {
+      const cols: Array<{ column_name: string; is_nullable: string }> =
+        await this.formsRepository.query(
+          `
+          SELECT column_name, is_nullable
+          FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'test_drive_forms'
+            AND column_name IN ('customerId','vehicleId','locationId','customer_id','vehicle_id','location_id')
+        `,
+        );
+
+      const dropNotNullIfNeeded = async (column: string) => {
+        const row = cols.find((c) => c.column_name === column);
+        if (!row || row.is_nullable === 'YES') return;
+        await this.formsRepository.query(
+          `ALTER TABLE "test_drive_forms" ALTER COLUMN "${column}" DROP NOT NULL`,
+        );
+      };
+
+      await dropNotNullIfNeeded('customerId');
+      await dropNotNullIfNeeded('vehicleId');
+      await dropNotNullIfNeeded('locationId');
+      await dropNotNullIfNeeded('customer_id');
+      await dropNotNullIfNeeded('vehicle_id');
+      await dropNotNullIfNeeded('location_id');
+    } catch (err) {
+      this.logger.warn(`Could not relax test_drive_forms FK nullability: ${String(err)}`);
+    }
+
+    await this.formsRepository
+      .createQueryBuilder()
+      .update(TestDriveForm)
+      .set({ currentStep: TestDriveFormStep.CUSTOMER_DATA })
+      .where('"current_step" IS NULL')
+      .execute();
+
+    await this.formsRepository
+      .createQueryBuilder()
+      .update(TestDriveForm)
+      .set({ currentStep: TestDriveFormStep.FINAL_CONFIRMATION })
+      .where('status = :submitted', { submitted: TestDriveFormStatus.SUBMITTED })
+      .execute();
+  }
+
   private getDefaultSurveyBrand(): SurveyBrand {
-    const raw = (process.env.SURVEY_DEFAULT_BRAND || SurveyBrand.MERCEDES_BENZ).trim();
+    const raw = (
+      process.env.SURVEY_DEFAULT_BRAND || SurveyBrand.MERCEDES_BENZ
+    ).trim();
     const allowed = Object.values(SurveyBrand);
     if (!allowed.includes(raw as SurveyBrand)) {
       throw new BadRequestException(
@@ -51,41 +119,44 @@ export class TestDriveFormsService {
   }
 
   private async maybeCreateSurveyAndEmail(form: TestDriveForm): Promise<void> {
-    if (
-      form.status !== TestDriveFormStatus.SUBMITTED &&
-      form.status !== TestDriveFormStatus.PENDING
-    ) {
+    if (form.status !== TestDriveFormStatus.SUBMITTED) {
       return;
     }
 
-    let created = false;
+    const customer = form.customer;
+    const describeError = (err: unknown) => {
+      if (err instanceof Error) return err.message;
+      if (typeof err === 'string') return err;
+      return 'Unknown error';
+    };
+
     let responseId: string | null = null;
     try {
-      const result = await this.surveyAutomationService.ensureResponseForTestDriveForm({
-        testDriveFormId: form.id,
-        brand: form.brand ?? this.getDefaultSurveyBrand(),
-      });
-      created = result.created;
+      const result =
+        await this.surveyAutomationService.ensureResponseForTestDriveForm({
+          testDriveFormId: form.id,
+          brand: form.brand ?? this.getDefaultSurveyBrand(),
+        });
       responseId = result.response.id;
-    } catch (err: any) {
+    } catch (err: unknown) {
       this.logger.warn(
-        `Survey response was not created for form ${form.id}: ${err?.message ?? err}`,
+        `Survey response was not created for form ${form.id}: ${describeError(err)}`,
       );
       return;
     }
 
-    if (!created) return;
+    const email = customer?.email?.trim();
+    if (!customer || !email) return;
 
-    const email = form.customer?.email?.trim();
-    if (!email) return;
-
-    const baseUrlRaw = (process.env.FRONTEND_BASE_URL || 'http://localhost:4200').trim();
+    const baseUrlRaw = (
+      process.env.FRONTEND_BASE_URL || 'http://localhost:4200'
+    ).trim();
     const baseUrl = baseUrlRaw.replace(/\/+$/, '');
     const surveyUrl = responseId ? `${baseUrl}/survey/${responseId}` : null;
 
     const subject = 'Encuesta de prueba de manejo';
     const text = [
-      `Hola ${form.customer.firstName} ${form.customer.lastName},`,
+      `Hola ${customer.firstName} ${customer.lastName},`,
       '',
       'Gracias por tu prueba de manejo.',
       '',
@@ -97,7 +168,7 @@ export class TestDriveFormsService {
     ].join('\n');
 
     const html = `
-      <p>Hola ${form.customer.firstName} ${form.customer.lastName},</p>
+      <p>Hola ${customer.firstName} ${customer.lastName},</p>
       <p>Gracias por tu prueba de manejo.</p>
       <p><strong>ID de encuesta:</strong> ${responseId}</p>
       ${surveyUrl ? `<p><a href="${surveyUrl}">Responder encuesta</a></p>` : ''}
@@ -111,11 +182,74 @@ export class TestDriveFormsService {
         text,
         html,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       this.logger.warn(
-        `Survey email was not sent to "${email}" for form ${form.id}: ${err?.message ?? err}`,
+        `Survey email was not sent to "${email}" for form ${form.id}: ${describeError(err)}`,
       );
     }
+  }
+
+  private async upsertReturnStateSpecialImages(
+    returnState: ReturnState,
+    payload: ReturnStatePayloadDto,
+  ): Promise<void> {
+    const [mileageImage, fuelLevelImage] = await Promise.all([
+      this.upsertSingleRoleImage(
+        returnState,
+        ReturnStateImageRole.MILEAGE,
+        payload.mileageImageUrl,
+      ),
+      this.upsertSingleRoleImage(
+        returnState,
+        ReturnStateImageRole.FUEL_LEVEL,
+        payload.fuelLevelImageUrl,
+      ),
+    ]);
+
+    returnState.mileageImage = mileageImage;
+    returnState.fuelLevelImage = fuelLevelImage;
+    await this.returnStatesRepository.save(returnState);
+  }
+
+  private async replaceReturnStateVehicleImages(
+    returnState: ReturnState,
+    images?: string[],
+  ): Promise<void> {
+    if (images === undefined) return;
+
+    await this.imagesRepository.delete({
+      returnState: { id: returnState.id } as ReturnState,
+      role: ReturnStateImageRole.VEHICLE,
+    });
+
+    const vehicleImages = images.map((url) =>
+      this.imagesRepository.create({
+        url,
+        role: ReturnStateImageRole.VEHICLE,
+        returnState,
+      }),
+    );
+    if (vehicleImages.length) {
+      await this.imagesRepository.save(vehicleImages);
+    }
+  }
+
+  private async upsertSingleRoleImage(
+    returnState: ReturnState,
+    role: ReturnStateImageRole,
+    url: string,
+  ): Promise<Image> {
+    const existing = await this.imagesRepository.findOne({
+      where: { returnState: { id: returnState.id }, role },
+    });
+    if (existing) {
+      existing.url = url;
+      // Ensure the FK is always set when saving; otherwise TypeORM can try to null it.
+      existing.returnState = returnState;
+      return this.imagesRepository.save(existing);
+    }
+    const created = this.imagesRepository.create({ url, role, returnState });
+    return this.imagesRepository.save(created);
   }
 
   private async loadCustomer(id: string): Promise<Customer> {
@@ -144,23 +278,15 @@ export class TestDriveFormsService {
 
   private buildReturnState(payload?: CreateTestDriveFormDto['returnState']) {
     if (!payload) return null;
-    const returnState = this.returnStatesRepository.create({
-      finalMileage: payload.finalMileage,
-      fuelLevelPercentage: payload.fuelLevelPercentage,
-    });
-    if (payload.images?.length) {
-      returnState.images = payload.images.map((url) =>
-        this.imagesRepository.create({ url }),
-      );
-    }
+    const returnState = this.returnStatesRepository.create();
     return returnState;
   }
 
   async create(dto: CreateTestDriveFormDto): Promise<TestDriveForm> {
     const [customer, vehicle, location] = await Promise.all([
-      this.loadCustomer(dto.customerId),
-      this.loadVehicle(dto.vehicleId),
-      this.loadLocation(dto.locationId),
+      dto.customerId ? this.loadCustomer(dto.customerId) : Promise.resolve(null),
+      dto.vehicleId ? this.loadVehicle(dto.vehicleId) : Promise.resolve(null),
+      dto.locationId ? this.loadLocation(dto.locationId) : Promise.resolve(null),
     ]);
 
     const signature = dto.signatureData
@@ -168,6 +294,12 @@ export class TestDriveFormsService {
       : null;
 
     const returnState = this.buildReturnState(dto.returnState);
+
+    const status = dto.status ?? TestDriveFormStatus.DRAFT;
+    const inferredStep =
+      status === TestDriveFormStatus.SUBMITTED
+        ? TestDriveFormStep.FINAL_CONFIRMATION
+        : dto.currentStep ?? TestDriveFormStep.CUSTOMER_DATA;
 
     const form = this.formsRepository.create({
       brand: dto.brand ?? this.getDefaultSurveyBrand(),
@@ -179,11 +311,23 @@ export class TestDriveFormsService {
       estimatedPurchaseDate: dto.estimatedPurchaseDate ?? null,
       observations: dto.observations ?? null,
       returnState,
-      status: dto.status ?? TestDriveFormStatus.DRAFT,
+      status,
+      currentStep: inferredStep,
     });
 
     const saved = await this.formsRepository.save(form);
-    const full = await this.findOne(saved.id);
+    let full = await this.findOne(saved.id);
+    if (dto.returnState && full.returnState) {
+      await this.replaceReturnStateVehicleImages(
+        full.returnState,
+        dto.returnState.images,
+      );
+      await this.upsertReturnStateSpecialImages(
+        full.returnState,
+        dto.returnState,
+      );
+      full = await this.findOne(saved.id);
+    }
     await this.maybeCreateSurveyAndEmail(full);
     return full;
   }
@@ -197,6 +341,11 @@ export class TestDriveFormsService {
       .leftJoinAndSelect('form.signature', 'signature')
       .leftJoinAndSelect('form.returnState', 'returnState')
       .leftJoinAndSelect('returnState.images', 'returnStateImages')
+      .leftJoinAndSelect('returnState.mileageImage', 'returnStateMileageImage')
+      .leftJoinAndSelect(
+        'returnState.fuelLevelImage',
+        'returnStateFuelLevelImage',
+      )
       .orderBy('form.updatedAt', 'DESC');
 
     if (query?.status) {
@@ -206,13 +355,17 @@ export class TestDriveFormsService {
       qb.andWhere('form.brand = :brand', { brand: query.brand });
     }
     if (query?.customerId) {
-      qb.andWhere('customer.id = :customerId', { customerId: query.customerId });
+      qb.andWhere('customer.id = :customerId', {
+        customerId: query.customerId,
+      });
     }
     if (query?.vehicleId) {
       qb.andWhere('vehicle.id = :vehicleId', { vehicleId: query.vehicleId });
     }
     if (query?.locationId) {
-      qb.andWhere('location.id = :locationId', { locationId: query.locationId });
+      qb.andWhere('location.id = :locationId', {
+        locationId: query.locationId,
+      });
     }
     if (query?.vehicleLicensePlate) {
       qb.andWhere('vehicle.licensePlate ILIKE :plate', {
@@ -238,6 +391,8 @@ export class TestDriveFormsService {
         'signature',
         'returnState',
         'returnState.images',
+        'returnState.mileageImage',
+        'returnState.fuelLevelImage',
       ],
     });
     if (!form) {
@@ -246,9 +401,14 @@ export class TestDriveFormsService {
     return form;
   }
 
-  async update(id: string, dto: UpdateTestDriveFormDto): Promise<TestDriveForm> {
+  async update(
+    id: string,
+    dto: UpdateTestDriveFormDto,
+  ): Promise<TestDriveForm> {
     const form = await this.findOne(id);
     const previousStatus = form.status;
+    const shouldTriggerSurveyEmail =
+      dto.status === TestDriveFormStatus.SUBMITTED;
 
     if (dto.brand !== undefined) {
       form.brand = dto.brand ?? this.getDefaultSurveyBrand();
@@ -256,11 +416,20 @@ export class TestDriveFormsService {
     if (dto.customerId) {
       form.customer = await this.loadCustomer(dto.customerId);
     }
+    if (dto.customerId === null) {
+      form.customer = null;
+    }
     if (dto.vehicleId) {
       form.vehicle = await this.loadVehicle(dto.vehicleId);
     }
+    if (dto.vehicleId === null) {
+      form.vehicle = null;
+    }
     if (dto.locationId) {
       form.location = await this.loadLocation(dto.locationId);
+    }
+    if (dto.locationId === null) {
+      form.location = null;
     }
     if (dto.signatureData !== undefined) {
       if (form.signature) {
@@ -284,36 +453,47 @@ export class TestDriveFormsService {
     }
     if (dto.status !== undefined) {
       form.status = dto.status;
+      if (dto.status === TestDriveFormStatus.SUBMITTED) {
+        form.currentStep = TestDriveFormStep.FINAL_CONFIRMATION;
+      }
+    }
+
+    if (dto.currentStep !== undefined) {
+      form.currentStep = dto.currentStep;
+      if (dto.currentStep === TestDriveFormStep.FINAL_CONFIRMATION) {
+        form.status = TestDriveFormStatus.SUBMITTED;
+      }
     }
 
     if (dto.returnState) {
       if (form.returnState) {
-        form.returnState.finalMileage = dto.returnState.finalMileage;
-        form.returnState.fuelLevelPercentage =
-          dto.returnState.fuelLevelPercentage;
-
-        await this.imagesRepository.delete({
-          returnState: { id: form.returnState.id } as ReturnState,
-        });
-        if (dto.returnState.images?.length) {
-          form.returnState.images = dto.returnState.images.map((url) =>
-            this.imagesRepository.create({ url }),
-          );
-        } else {
-          form.returnState.images = [];
-        }
+        await this.replaceReturnStateVehicleImages(
+          form.returnState,
+          dto.returnState.images,
+        );
       } else {
         form.returnState = this.buildReturnState(dto.returnState);
       }
     }
 
     const saved = await this.formsRepository.save(form);
-    const full = await this.findOne(saved.id);
+    let full = await this.findOne(saved.id);
+
+    if (dto.returnState && full.returnState) {
+      await this.replaceReturnStateVehicleImages(
+        full.returnState,
+        dto.returnState.images,
+      );
+      await this.upsertReturnStateSpecialImages(
+        full.returnState,
+        dto.returnState,
+      );
+      full = await this.findOne(saved.id);
+    }
 
     if (
-      previousStatus !== full.status &&
-      (full.status === TestDriveFormStatus.SUBMITTED ||
-        full.status === TestDriveFormStatus.PENDING)
+      shouldTriggerSurveyEmail &&
+      (previousStatus !== full.status || dto.status !== undefined)
     ) {
       await this.maybeCreateSurveyAndEmail(full);
     }
@@ -338,6 +518,8 @@ export class TestDriveFormsService {
         'signature',
         'returnState',
         'returnState.images',
+        'returnState.mileageImage',
+        'returnState.fuelLevelImage',
       ],
     });
 
@@ -345,13 +527,30 @@ export class TestDriveFormsService {
       throw new NotFoundException(`Test drive form ${id} not found`);
     }
 
-    const escapeHtml = (value: unknown) =>
-      String(value ?? '')
+    const customer = form.customer;
+    const vehicle = form.vehicle;
+    const location = form.location;
+
+    const escapeHtml = (value: unknown) => {
+      const str = (() => {
+        if (value === null || value === undefined) return '';
+        if (typeof value === 'string') return value;
+        if (typeof value === 'number' || typeof value === 'boolean')
+          return String(value);
+        try {
+          return JSON.stringify(value);
+        } catch {
+          return '';
+        }
+      })();
+
+      return str
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#039;');
+    };
 
     const formatDateTime = (value?: Date | null) => {
       if (!value) return '';
@@ -365,10 +564,11 @@ export class TestDriveFormsService {
       }).format(value);
     };
 
-    const signatureDataUrl =
-      form.signature?.signatureData?.startsWith('data:image/')
-        ? form.signature.signatureData
-        : null;
+    const signatureDataUrl = form.signature?.signatureData?.startsWith(
+      'data:image/',
+    )
+      ? form.signature.signatureData
+      : null;
 
     const vehicleImages = form.returnState?.images?.length
       ? form.returnState.images.map((img) => img.url)
@@ -508,50 +708,50 @@ export class TestDriveFormsService {
       <div class="chip">${escapeHtml(form.status)}</div>
     </div>
 
-    <div class="section">
-      <h2>Datos del cliente</h2>
-      <div class="rows">
-        <div class="row"><div class="label">Nombres</div><div class="value">${escapeHtml(
-          form.customer.firstName,
-        )}</div></div>
-        <div class="row"><div class="label">Apellidos</div><div class="value">${escapeHtml(
-          form.customer.lastName,
-        )}</div></div>
-        <div class="row"><div class="label">DNI</div><div class="value">${escapeHtml(
-          form.customer.dni,
-        )}</div></div>
-        <div class="row"><div class="label">Teléfono</div><div class="value">${escapeHtml(
-          form.customer.phoneNumber,
-        )}</div></div>
-        <div class="row"><div class="label">Email</div><div class="value">${escapeHtml(
-          form.customer.email,
-        )}</div></div>
-        <div class="row"><div class="label">Sede / Ubicación</div><div class="value">${escapeHtml(
-          form.location.locationName,
-        )}</div></div>
-      </div>
-    </div>
+	    <div class="section">
+	      <h2>Datos del cliente</h2>
+	      <div class="rows">
+	        <div class="row"><div class="label">Nombres</div><div class="value">${escapeHtml(
+	          customer?.firstName ?? '',
+	        )}</div></div>
+	        <div class="row"><div class="label">Apellidos</div><div class="value">${escapeHtml(
+	          customer?.lastName ?? '',
+	        )}</div></div>
+	        <div class="row"><div class="label">DNI</div><div class="value">${escapeHtml(
+	          customer?.dni ?? '',
+	        )}</div></div>
+	        <div class="row"><div class="label">Teléfono</div><div class="value">${escapeHtml(
+	          customer?.phoneNumber ?? '',
+	        )}</div></div>
+	        <div class="row"><div class="label">Email</div><div class="value">${escapeHtml(
+	          customer?.email ?? '',
+	        )}</div></div>
+	        <div class="row"><div class="label">Sede / Ubicación</div><div class="value">${escapeHtml(
+	          location?.locationName ?? '',
+	        )}</div></div>
+	      </div>
+	    </div>
 
-    <div class="section">
-      <h2>Información del vehículo</h2>
-      <div class="rows">
-        <div class="row"><div class="label">Marca</div><div class="value">${escapeHtml(
-          form.vehicle.make,
-        )}</div></div>
-        <div class="row"><div class="label">Modelo</div><div class="value">${escapeHtml(
-          form.vehicle.model,
-        )}</div></div>
-        <div class="row"><div class="label">Placa</div><div class="value">${escapeHtml(
-          form.vehicle.licensePlate,
-        )}</div></div>
-        <div class="row"><div class="label">VIN</div><div class="value">${escapeHtml(
-          form.vehicle.vinNumber,
-        )}</div></div>
-        <div class="row"><div class="label">Estado de registro</div><div class="value">${escapeHtml(
-          form.vehicle.registerStatus,
-        )}</div></div>
-      </div>
-    </div>
+	    <div class="section">
+	      <h2>Información del vehículo</h2>
+	      <div class="rows">
+	        <div class="row"><div class="label">Marca</div><div class="value">${escapeHtml(
+	          vehicle?.make ?? '',
+	        )}</div></div>
+	        <div class="row"><div class="label">Modelo</div><div class="value">${escapeHtml(
+	          vehicle?.model ?? '',
+	        )}</div></div>
+	        <div class="row"><div class="label">Placa</div><div class="value">${escapeHtml(
+	          vehicle?.licensePlate ?? '',
+	        )}</div></div>
+	        <div class="row"><div class="label">VIN</div><div class="value">${escapeHtml(
+	          vehicle?.vinNumber ?? '',
+	        )}</div></div>
+	        <div class="row"><div class="label">Estado de registro</div><div class="value">${escapeHtml(
+	          vehicle?.registerStatus ?? '',
+	        )}</div></div>
+	      </div>
+	    </div>
 
     <div class="section">
       <h2>Consentimiento del cliente</h2>
@@ -579,12 +779,16 @@ export class TestDriveFormsService {
         <div class="row" style="grid-column: 1 / -1;"><div class="label">Observaciones</div><div class="value">${escapeHtml(
           form.observations ?? '',
         )}</div></div>
-        <div class="row"><div class="label">Kilometraje final</div><div class="value">${escapeHtml(
-          form.returnState?.finalMileage ?? '',
-        )}</div></div>
-        <div class="row"><div class="label">Nivel de combustible</div><div class="value">${escapeHtml(
-          form.returnState?.fuelLevelPercentage ?? '',
-        )}${form.returnState?.fuelLevelPercentage != null ? '%' : ''}</div></div>
+        <div class="row" style="grid-column: 1 / -1;"><div class="label">Foto (kilometraje)</div><div class="value">${
+          form.returnState?.mileageImage?.url
+            ? `<img src="${escapeHtml(form.returnState.mileageImage.url)}" alt="Kilometraje" style="max-width: 100%; max-height: 240px; border-radius: 8px;" />`
+            : ''
+        }</div></div>
+        <div class="row" style="grid-column: 1 / -1;"><div class="label">Foto (combustible)</div><div class="value">${
+          form.returnState?.fuelLevelImage?.url
+            ? `<img src="${escapeHtml(form.returnState.fuelLevelImage.url)}" alt="Combustible" style="max-width: 100%; max-height: 240px; border-radius: 8px;" />`
+            : ''
+        }</div></div>
         <div class="row" style="grid-column: 1 / -1;"><div class="label">Fotos del vehículo</div>${imagesHtml}</div>
       </div>
     </div>
@@ -622,32 +826,42 @@ export class TestDriveFormsService {
   async sendSummaryEmail(id: string): Promise<{ ok: true }> {
     const form = await this.findOne(id);
 
-    const email = form.customer.email?.trim();
+    const customer = form.customer;
+    if (!customer) {
+      throw new BadRequestException('Customer is missing');
+    }
+
+    const vehicle = form.vehicle;
+    if (!vehicle) {
+      throw new BadRequestException('Vehicle is missing');
+    }
+
+    const email = customer.email?.trim();
     if (!email) {
       throw new BadRequestException('Customer email is missing');
     }
 
     const pdf = await this.generatePdf(id);
 
-    const subject = `Resumen de prueba de manejo - ${form.vehicle.licensePlate}`;
+    const subject = `Resumen de prueba de manejo - ${vehicle.licensePlate}`;
     const text = [
-      `Hola ${form.customer.firstName} ${form.customer.lastName},`,
+      `Hola ${customer.firstName} ${customer.lastName},`,
       '',
       'Adjuntamos el resumen de tu prueba de manejo.',
       `Formulario: ${form.id}`,
-      `Vehículo: ${form.vehicle.make} ${form.vehicle.model} (${form.vehicle.licensePlate})`,
+      `Vehículo: ${vehicle.make} ${vehicle.model} (${vehicle.licensePlate})`,
       `Estado: ${form.status}`,
       '',
       'Gracias.',
     ].join('\n');
 
     const html = `
-      <p>Hola ${form.customer.firstName} ${form.customer.lastName},</p>
+      <p>Hola ${customer.firstName} ${customer.lastName},</p>
       <p>Adjuntamos el resumen de tu prueba de manejo.</p>
       <ul>
-        <li><strong>Formulario:</strong> ${form.id}</li>
-        <li><strong>Vehículo:</strong> ${form.vehicle.make} ${form.vehicle.model} (${form.vehicle.licensePlate})</li>
-        <li><strong>Estado:</strong> ${form.status}</li>
+	        <li><strong>Formulario:</strong> ${form.id}</li>
+	        <li><strong>Vehículo:</strong> ${vehicle.make} ${vehicle.model} (${vehicle.licensePlate})</li>
+	        <li><strong>Estado:</strong> ${form.status}</li>
       </ul>
       <p>Gracias.</p>
     `;

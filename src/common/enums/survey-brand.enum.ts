@@ -3,4 +3,3 @@ export enum SurveyBrand {
   ANDES_MOTOR = 'ANDES MOTOR',
   STELLANTIS = 'STELLANTIS',
 }
-

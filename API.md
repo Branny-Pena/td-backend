@@ -18,11 +18,11 @@ Notes:
   - 1:N `TestDriveForm` (location)
 - **DigitalSignature** (`digital_signatures`): `id`, `signatureData`  
   - 1:1 optional in `TestDriveForm` (signature, cascades on save)
-- **ReturnState** (`return_states`): `id`, `finalMileage`, `fuelLevelPercentage`  
+- **ReturnState** (`return_states`): `id`, `mileageImage`, `fuelLevelImage`  
   - 1:N `Image` (returnState, cascade on delete from returnState)  
   - 1:1 optional in `TestDriveForm` (returnState, cascade on save)
-- **Image** (`images`): `id`, `url`, `returnState` (required FK)
-- **TestDriveForm** (`test_drive_forms`): `id`, `brand` (`MERCEDES-BENZ`|`ANDES MOTOR`|`STELLANTIS`), `purchaseProbability` (int), `estimatedPurchaseDate` (`"1 mes" | "1 a 3 meses" | "Más de 3 meses"`), `observations`, `status` (`draft`|`pending`|`submitted`), timestamps  
+- **Image** (`images`): `id`, `url`, `role`, `returnState` (required FK)
+- **TestDriveForm** (`test_drive_forms`): `id`, `brand` (`MERCEDES-BENZ`|`ANDES MOTOR`|`STELLANTIS`), `purchaseProbability` (int), `estimatedPurchaseDate` (`"1 mes" | "1 a 3 meses" | "Más de 3 meses"`), `observations`, `status` (`draft`|`submitted`), timestamps  
   - N:1 `Customer`, N:1 `Vehicle`, N:1 `CurrentLocation` (all required)  
   - 1:1 `DigitalSignature` (optional, eager)  
   - 1:1 `ReturnState` (optional, eager; includes images)
@@ -126,7 +126,7 @@ Response:
 ## Return States
 - `POST /return-states` — create  
   ```json
-  { "finalMileage": 12000, "fuelLevelPercentage": 80, "images": ["https://.../photo1.jpg"] }
+  { "mileageImageUrl": "https://.../mileage.jpg", "fuelLevelImageUrl": "https://.../fuel.jpg", "images": ["https://.../photo1.jpg"] }
   ```
 - `GET /return-states`
 - `GET /return-states/:id`
@@ -137,10 +137,10 @@ Response:
 ```json
 {
   "id": "uuid",
-  "finalMileage": 12000,
-  "fuelLevelPercentage": 80,
+  "mileageImage": { "id": "uuid", "url": "https://.../mileage.jpg", "role": "mileage" },
+  "fuelLevelImage": { "id": "uuid", "url": "https://.../fuel.jpg", "role": "fuel_level" },
   "images": [
-    { "id": "uuid", "url": "https://.../photo1.jpg", "returnState": "uuid" }
+    { "id": "uuid", "url": "https://.../photo1.jpg", "role": "vehicle", "returnState": "uuid" }
   ]
 }
 ```
@@ -166,7 +166,7 @@ Response:
 ```
 
 ## Test Drive Forms
-Requires existing customer, vehicle, and location.
+`customerId`, `vehicleId`, and `locationId` are optional to allow creating a form from zero (initial step).
 - `POST /test-drive-forms`  
   ```json
   {
@@ -174,14 +174,15 @@ Requires existing customer, vehicle, and location.
     "customerId": "uuid",
     "vehicleId": "uuid",
     "locationId": "uuid",
+    "currentStep": "CUSTOMER_DATA",
     "signatureData": "<optional signature>",
     "purchaseProbability": 75,
     "estimatedPurchaseDate": "1 a 3 meses",
     "observations": "Prefers red",
     "status": "submitted",
     "returnState": {
-      "finalMileage": 12345,
-      "fuelLevelPercentage": 70,
+      "mileageImageUrl": "https://.../mileage.jpg",
+      "fuelLevelImageUrl": "https://.../fuel.jpg",
       "images": ["https://.../return1.jpg"]
     }
   }
@@ -189,7 +190,7 @@ Requires existing customer, vehicle, and location.
   Note: `signatureData` should be a data URL like `data:image/png;base64,iVBORw0KG...`.
 - `GET /test-drive-forms` - returns forms with related customer, vehicle, location, signature, returnState (+images)
 - Optional query params for filtering:
-  - `status` = `draft|pending|submitted`
+  - `status` = `draft|submitted`
   - `brand` = `MERCEDES-BENZ|ANDES MOTOR|STELLANTIS`
   - `customerId` = UUID
   - `vehicleId` = UUID
@@ -203,10 +204,11 @@ Requires existing customer, vehicle, and location.
 - `DELETE /test-drive-forms/:id`
 
 Automatic survey + email behavior:
-- When a test drive form is created (or updated) with `status` = `pending` or `submitted`, the backend auto-creates a `SurveyResponse` (status `started`) for the form `brand` and sends an email to the customer with:
+- When a test drive form is created (or updated) with `status` = `submitted`, the backend auto-creates a `SurveyResponse` (status `started`) for the form `brand` and sends an email to the customer with:
   - the survey response ID
   - a public link: `${FRONTEND_BASE_URL}/survey/{surveyResponseId}` (configure `FRONTEND_BASE_URL` in `.env`)
   - If `brand` is not provided on the form, `SURVEY_DEFAULT_BRAND` is used as a fallback.
+  - If the `SurveyResponse` already exists, the backend reuses it and still sends the email (idempotent response creation).
 
 Email configuration (required environment variables):
 - `SMTP_HOST` (string)
@@ -224,20 +226,26 @@ Response (example):
   "vehicle": { "id": "uuid", "make": "Toyota", "model": "Corolla", "licensePlate": "ABC-123", "vinNumber": "VIN123456789" },
   "location": { "id": "uuid", "locationName": "Lima Center" },
   "signature": { "id": "uuid", "signatureData": "<data>" },
+  "currentStep": "FINAL_CONFIRMATION",
   "purchaseProbability": 75,
   "estimatedPurchaseDate": "1 a 3 meses",
   "observations": "Prefers red",
   "returnState": {
     "id": "uuid",
-    "finalMileage": 12345,
-    "fuelLevelPercentage": 70,
-    "images": [{ "id": "uuid", "url": "https://.../return1.jpg" }]
+    "mileageImage": { "id": "uuid", "url": "https://.../mileage.jpg", "role": "mileage" },
+    "fuelLevelImage": { "id": "uuid", "url": "https://.../fuel.jpg", "role": "fuel_level" },
+    "images": [{ "id": "uuid", "url": "https://.../return1.jpg", "role": "vehicle" }]
   },
   "status": "submitted",
   "createdAt": "2025-12-11T17:49:49.000Z",
   "updatedAt": "2025-12-11T17:49:49.000Z"
 }
 ```
+
+Notes:
+- `currentStep` allowed values: `CUSTOMER_DATA|VEHICLE_DATA|SIGNATURE_DATA|VALUATION_DATA|VEHICLE_RETURN_DATA|FINAL_CONFIRMATION`.
+- If `status = submitted`, the backend forces `currentStep = FINAL_CONFIRMATION`.
+- If `currentStep = FINAL_CONFIRMATION`, the backend forces `status = submitted`.
 
 ## Surveys (Versioned)
 Notes:

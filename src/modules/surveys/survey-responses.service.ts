@@ -1,12 +1,22 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { TestDriveForm } from '../test-drive-forms/entities/test-drive-form.entity';
 import { StartSurveyResponseDto } from './dto/start-survey-response.dto';
 import { SubmitSurveyAnswersDto } from './dto/submit-survey-answers.dto';
 import { SurveyAnswer } from './entities/survey-answer.entity';
-import { SurveyQuestion, SurveyQuestionType } from './entities/survey-question.entity';
-import { SurveyResponse, SurveyResponseStatus } from './entities/survey-response.entity';
+import {
+  SurveyQuestion,
+  SurveyQuestionType,
+} from './entities/survey-question.entity';
+import {
+  SurveyResponse,
+  SurveyResponseStatus,
+} from './entities/survey-response.entity';
 import { SurveyVersion } from './entities/survey-version.entity';
 import { Customer } from '../customers/entities/customers.entity';
 
@@ -52,7 +62,9 @@ export class SurveyResponsesService {
     if (!response.testDriveForm) return response as any;
 
     const testDriveForm: any = { ...response.testDriveForm };
-    testDriveForm.customer = this.toCustomerBasic((response.testDriveForm as any).customer);
+    testDriveForm.customer = this.toCustomerBasic(
+      (response.testDriveForm as any).customer,
+    );
 
     return { ...response, testDriveForm } as any;
   }
@@ -122,7 +134,8 @@ export class SurveyResponsesService {
         'answers.option',
       ],
     });
-    if (!response) throw new NotFoundException(`Survey response ${id} not found`);
+    if (!response)
+      throw new NotFoundException(`Survey response ${id} not found`);
     return this.withSanitizedCustomer(response);
   }
 
@@ -134,7 +147,8 @@ export class SurveyResponsesService {
       where: { id: responseId },
       relations: ['surveyVersion'],
     });
-    if (!response) throw new NotFoundException(`Survey response ${responseId} not found`);
+    if (!response)
+      throw new NotFoundException(`Survey response ${responseId} not found`);
 
     if (response.status === SurveyResponseStatus.SUBMITTED) {
       throw new BadRequestException('Survey response is already submitted');
@@ -171,13 +185,17 @@ export class SurveyResponsesService {
         providedQuestionIds.has(question.id) &&
         question.type !== SurveyQuestionType.OPTION_MULTI
       ) {
-        throw new BadRequestException(`Duplicate answer for question ${question.id}`);
+        throw new BadRequestException(
+          `Duplicate answer for question ${question.id}`,
+        );
       }
       providedQuestionIds.add(question.id);
 
       if (question.type === SurveyQuestionType.NUMBER) {
         if (a.valueNumber == null) {
-          throw new BadRequestException(`valueNumber is required for question ${question.id}`);
+          throw new BadRequestException(
+            `valueNumber is required for question ${question.id}`,
+          );
         }
         if (question.minValue != null && a.valueNumber < question.minValue) {
           throw new BadRequestException(
@@ -205,7 +223,9 @@ export class SurveyResponsesService {
       if (question.type === SurveyQuestionType.TEXT) {
         const text = (a.valueText ?? '').trim();
         if (question.isRequired && text.length === 0) {
-          throw new BadRequestException(`valueText is required for question ${question.id}`);
+          throw new BadRequestException(
+            `valueText is required for question ${question.id}`,
+          );
         }
 
         createdAnswers.push(
@@ -228,7 +248,9 @@ export class SurveyResponsesService {
         const uniqueOptionIds = Array.from(new Set(optionIds));
 
         if (question.isRequired && uniqueOptionIds.length === 0) {
-          throw new BadRequestException(`optionIds are required for question ${question.id}`);
+          throw new BadRequestException(
+            `optionIds are required for question ${question.id}`,
+          );
         }
         if (
           question.type === SurveyQuestionType.OPTION_SINGLE &&
@@ -259,7 +281,9 @@ export class SurveyResponsesService {
         continue;
       }
 
-      throw new BadRequestException(`Unsupported question type for question ${question.id}`);
+      throw new BadRequestException(
+        `Unsupported question type for question ${question.id}`,
+      );
     }
 
     const missingRequired = questions
@@ -285,10 +309,12 @@ export class SurveyResponsesService {
 
       // IMPORTANT: do not `save(response)` here while `answers` might be loaded as `[]`,
       // otherwise TypeORM may try to "sync" the relation by nulling `survey_answers.responseId`.
-      await manager.getRepository(SurveyResponse).update(
-        { id: response.id },
-        { status: SurveyResponseStatus.SUBMITTED, submittedAt: new Date() },
-      );
+      await manager
+        .getRepository(SurveyResponse)
+        .update(
+          { id: response.id },
+          { status: SurveyResponseStatus.SUBMITTED, submittedAt: new Date() },
+        );
       return this.findOne(response.id);
     });
   }
