@@ -6,12 +6,12 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { CustomersModule } from './modules/customers/customers.module';
 import { VehiclesModule } from './modules/vehicles/vehicles.module';
-import { LocationsModule } from './modules/locations/locations.module';
 import { DigitalSignaturesModule } from './modules/digital-signatures/digital-signatures.module';
 import { ReturnStatesModule } from './modules/return-states/return-states.module';
 import { ImagesModule } from './modules/images/images.module';
 import { TestDriveFormsModule } from './modules/test-drive-forms/test-drive-forms.module';
 import { SurveysModule } from './modules/surveys/surveys.module';
+import { ReportsModule } from './modules/reports/reports.module';
 
 @Module({
   imports: [
@@ -40,12 +40,12 @@ import { SurveysModule } from './modules/surveys/surveys.module';
     }),
     CustomersModule,
     VehiclesModule,
-    LocationsModule,
     DigitalSignaturesModule,
     ReturnStatesModule,
     ImagesModule,
     TestDriveFormsModule,
     SurveysModule,
+    ReportsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

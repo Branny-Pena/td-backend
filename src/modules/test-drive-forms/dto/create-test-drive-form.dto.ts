@@ -31,10 +31,6 @@ export class CreateTestDriveFormDto {
   vehicleId?: string | null;
 
   @IsOptional()
-  @IsUUID()
-  locationId?: string | null;
-
-  @IsOptional()
   @IsString()
   signatureData?: string;
 

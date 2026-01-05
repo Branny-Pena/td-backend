@@ -20,8 +20,8 @@ export class FindTestDriveFormsQueryDto {
   vehicleId?: string;
 
   @IsOptional()
-  @IsUUID()
-  locationId?: string;
+  @IsString()
+  vehicleLocation?: string;
 
   // Convenience filter (case-insensitive, partial match)
   @IsOptional()

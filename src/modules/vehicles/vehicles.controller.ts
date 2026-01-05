@@ -9,6 +9,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { CreateVehicleDto } from './dto/create-vehicle.dto';
+import { CreateVehicleQrDto } from './dto/create-vehicle-qr.dto';
 import { UpdateVehicleDto } from './dto/update-vehicle.dto';
 import { VehiclesService } from './vehicles.service';
 
@@ -25,6 +26,11 @@ export class VehiclesController {
   async findOrCreate(@Body() dto: CreateVehicleDto) {
     const { vehicle, created } = await this.vehiclesService.findOrCreate(dto);
     return { vehicle, created };
+  }
+
+  @Post('/qr-code')
+  generateQrCode(@Body() dto: CreateVehicleQrDto) {
+    return this.vehiclesService.generateQrCode(dto);
   }
 
   @Get()

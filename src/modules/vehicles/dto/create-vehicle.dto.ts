@@ -10,6 +10,14 @@ export class CreateVehicleDto {
   @IsNotEmpty()
   model: string;
 
+  @IsOptional()
+  @IsString()
+  color?: string;
+
+  @IsOptional()
+  @IsString()
+  location?: string;
+
   @IsString()
   @IsNotEmpty()
   licensePlate: string;

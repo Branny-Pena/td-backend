@@ -7,7 +7,6 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { AuditableEntity } from '../../../common/entities/auditable.entity';
-import { CurrentLocation } from '../../locations/entities/current-location.entity';
 import { DigitalSignature } from '../../digital-signatures/entities/digital-signature.entity';
 import { ReturnState } from '../../return-states/entities/return-state.entity';
 import { Vehicle } from '../../vehicles/entities/vehicle.entity';
@@ -57,12 +56,6 @@ export class TestDriveForm extends AuditableEntity {
     onDelete: 'SET NULL',
   })
   vehicle: Vehicle | null;
-
-  @ManyToOne(() => CurrentLocation, (location) => location.testDriveForms, {
-    nullable: true,
-    onDelete: 'SET NULL',
-  })
-  location: CurrentLocation | null;
 
   @OneToOne(() => DigitalSignature, {
     cascade: true,

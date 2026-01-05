@@ -1,7 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import * as QRCode from 'qrcode';
 import { CreateVehicleDto } from './dto/create-vehicle.dto';
+import { CreateVehicleQrDto } from './dto/create-vehicle-qr.dto';
 import { UpdateVehicleDto } from './dto/update-vehicle.dto';
 import { Vehicle, VehicleRegisterStatus } from './entities/vehicle.entity';
 
@@ -46,12 +48,33 @@ export class VehiclesService {
     licensePlate?: string,
     vinNumber?: string,
   ): Promise<Vehicle> {
-    const where: any[] = [];
+    const qb = this.vehiclesRepository.createQueryBuilder('vehicle');
+    let hasFilter = false;
 
-    if (licensePlate) where.push({ licensePlate: licensePlate });
-    if (vinNumber) where.push({ vinNumber: vinNumber });
+    if (licensePlate) {
+      const normalizedPlate = this.normalizeLookup(licensePlate);
+      qb.orWhere(
+        "REPLACE(UPPER(vehicle.licensePlate), ' ', '') = :plate",
+        { plate: normalizedPlate },
+      );
+      hasFilter = true;
+    }
 
-    const vehicle = await this.vehiclesRepository.findOne({ where });
+    if (vinNumber) {
+      const normalizedVin = this.normalizeLookup(vinNumber);
+      qb.orWhere("REPLACE(UPPER(vehicle.vinNumber), ' ', '') = :vin", {
+        vin: normalizedVin,
+      });
+      hasFilter = true;
+    }
+
+    if (!hasFilter) {
+      throw new NotFoundException(
+        'Vehicle lookup requires licensePlate or vinNumber',
+      );
+    }
+
+    const vehicle = await qb.getOne();
 
     if (!vehicle) {
       throw new NotFoundException(`Vehicle with ${licensePlate} not found`);
@@ -62,12 +85,17 @@ export class VehiclesService {
   async findOrCreate(
     dto: CreateVehicleDto,
   ): Promise<{ vehicle: Vehicle; created: boolean }> {
-    const where: any[] = [];
-
-    if (dto.licensePlate) where.push({ licensePlate: dto.licensePlate });
-    if (dto.vinNumber) where.push({ vinNumber: dto.vinNumber });
-
-    let vehicle = await this.vehiclesRepository.findOne({ where });
+    const normalizedPlate = this.normalizeLookup(dto.licensePlate);
+    const normalizedVin = this.normalizeLookup(dto.vinNumber);
+    let vehicle = await this.vehiclesRepository
+      .createQueryBuilder('vehicle')
+      .where("REPLACE(UPPER(vehicle.licensePlate), ' ', '') = :plate", {
+        plate: normalizedPlate,
+      })
+      .orWhere("REPLACE(UPPER(vehicle.vinNumber), ' ', '') = :vin", {
+        vin: normalizedVin,
+      })
+      .getOne();
     if (vehicle) {
       return { vehicle: vehicle, created: false };
     }
@@ -77,5 +105,30 @@ export class VehiclesService {
     });
     vehicle = await this.vehiclesRepository.save(vehicle);
     return { vehicle: vehicle, created: true };
+  }
+
+  async generateQrCode(
+    dto: CreateVehicleQrDto,
+  ): Promise<{ payload: string; qrCodeDataUrl: string }> {
+    const payload = JSON.stringify({
+      marca: dto.brand.trim(),
+      modelo: dto.model.trim(),
+      color: dto.color.trim(),
+      placa: dto.licensePlate.trim(),
+      vin: dto.vin.trim(),
+      ubicacion: dto.location.trim(),
+    });
+
+    const qrCodeDataUrl = await QRCode.toDataURL(payload, {
+      errorCorrectionLevel: 'M',
+      margin: 1,
+      scale: 6,
+    });
+
+    return { payload, qrCodeDataUrl };
+  }
+
+  private normalizeLookup(value: string): string {
+    return value.replace(/\s+/g, '').trim().toUpperCase();
   }
 }

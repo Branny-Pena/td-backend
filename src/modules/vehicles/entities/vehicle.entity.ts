@@ -18,6 +18,12 @@ export class Vehicle extends AuditableEntity {
   @Column()
   model: string;
 
+  @Column({ type: 'text', nullable: true })
+  color: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  location: string | null;
+
   @Column({ name: 'license_plate', unique: true })
   licensePlate: string;
 

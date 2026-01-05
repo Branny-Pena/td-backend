@@ -12,10 +12,8 @@ Notes:
 ## Models & Relationships
 - **Customer** (`customers`): `id`, `firstName`, `lastName`, `dni`, `phoneNumber`, `email`  
   - 1:N `TestDriveForm` (customer)
-- **Vehicle** (`vehicles`): `id`, `make`, `model`, `licensePlate`, `vinNumber`, `registerStatus` (`in progress`|`confirmed`)  
+- **Vehicle** (`vehicles`): `id`, `make`, `model`, `color`, `location`, `licensePlate`, `vinNumber`, `registerStatus` (`in progress`|`confirmed`)  
   - 1:N `TestDriveForm` (vehicle)
-- **CurrentLocation** (`current_locations`): `id`, `locationName`  
-  - 1:N `TestDriveForm` (location)
 - **DigitalSignature** (`digital_signatures`): `id`, `signatureData`  
   - 1:1 optional in `TestDriveForm` (signature, cascades on save)
 - **ReturnState** (`return_states`): `id`, `mileageImage`, `fuelLevelImage`  
@@ -23,7 +21,7 @@ Notes:
   - 1:1 optional in `TestDriveForm` (returnState, cascade on save)
 - **Image** (`images`): `id`, `url`, `role`, `returnState` (required FK)
 - **TestDriveForm** (`test_drive_forms`): `id`, `brand` (`MERCEDES-BENZ`|`ANDES MOTOR`|`STELLANTIS`), `purchaseProbability` (int), `estimatedPurchaseDate` (`"1 mes" | "1 a 3 meses" | "Más de 3 meses"`), `observations`, `status` (`draft`|`submitted`), timestamps  
-  - N:1 `Customer`, N:1 `Vehicle`, N:1 `CurrentLocation` (all required)  
+  - N:1 `Customer`, N:1 `Vehicle` (nullable; set during steps)  
   - 1:1 `DigitalSignature` (optional, eager)  
   - 1:1 `ReturnState` (optional, eager; includes images)
 
@@ -73,9 +71,20 @@ Response shape (example):
 ## Vehicles
 - `POST /vehicles` — create  
   ```json
-  { "make": "Toyota", "model": "Corolla", "licensePlate": "ABC-123", "vinNumber": "VIN123456789", "registerStatus": "confirmed" }
+  { "make": "Toyota", "model": "Corolla", "color": "Rojo", "location": "Lima", "licensePlate": "ABC-123", "vinNumber": "VIN123456789", "registerStatus": "confirmed" }
   ```
 - `POST /vehicles/find-or-create` — returns `{ vehicle, created }` (when created, `vehicle.registerStatus` is `in progress`)
+- `POST /vehicles/qr-code` - generate a QR code for vehicle info  
+  ```json
+  {
+    "brand": "Toyota",
+    "model": "Corolla",
+    "color": "Rojo",
+    "licensePlate": "ABC-123",
+    "vin": "JTDBE32K720123456",
+    "location": "Lima, Peru"
+  }
+  ```
 - `GET /vehicles`
 - `GET /vehicles/:id`
 - `PATCH /vehicles/:id`
@@ -87,26 +96,33 @@ Response:
   "id": "uuid",
   "make": "Toyota",
   "model": "Corolla",
+  "color": "Rojo",
+  "location": "Lima",
   "licensePlate": "ABC-123",
   "vinNumber": "VIN123456789",
   "registerStatus": "confirmed"
 }
 ```
 
-## Locations
-- `POST /locations` — create  
-  ```json
-  { "locationName": "Lima Center" }
-  ```
-- `GET /locations`
-- `GET /locations/:id`
-- `PATCH /locations/:id`
-- `DELETE /locations/:id`
 
-Response:
+QR code response:
 ```json
-{ "id": "uuid", "locationName": "Lima Center" }
+{
+  "payload": "{\"marca\":\"Toyota\",\"modelo\":\"Corolla\",\"color\":\"Rojo\",\"placa\":\"ABC-123\",\"vin\":\"JTDBE32K720123456\",\"ubicacion\":\"Lima, Peru\"}",
+  "qrCodeDataUrl": "data:image/png;base64,iVBORw0KGgoAAA..."
+}
 ```
+
+## Reports
+- `POST /reports/test-drive-forms/excel-email` - generate and email the Excel report
+  ```json
+  { "email": "ops@example.com" }
+  ```
+  Response: `200 OK` (empty body)
+  Notes:
+  - Uses all test drive forms for now (daily filter will be added later).
+  - Status mapping: `submitted` -> "Finalizado", otherwise "En Progreso".
+  - Columns are: Modelo, Placa, Color, Sucursal de origen, Fecha Inicio, Fecha Fin Programado, Mantenimiento/Reparacion, Motivo/Justificacion, Asesor, Sucursal del Asesor, Cliente, Horario reserva (test drive), Horario reserva RETORNO, Observaciones, Intencion de compra, Tiempo estimado de compra, Cantidad de Fotos retorno vehiculo, Estado test drive.
 
 ## Digital Signatures
 - `POST /digital-signatures` — create  
@@ -166,14 +182,13 @@ Response:
 ```
 
 ## Test Drive Forms
-`customerId`, `vehicleId`, and `locationId` are optional to allow creating a form from zero (initial step).
+`customerId` and `vehicleId` are optional to allow creating a form from zero (initial step).
 - `POST /test-drive-forms`  
   ```json
   {
     "brand": "MERCEDES-BENZ",
     "customerId": "uuid",
     "vehicleId": "uuid",
-    "locationId": "uuid",
     "currentStep": "CUSTOMER_DATA",
     "signatureData": "<optional signature>",
     "purchaseProbability": 75,
@@ -188,15 +203,15 @@ Response:
   }
   ```
   Note: `signatureData` should be a data URL like `data:image/png;base64,iVBORw0KG...`.
-- `GET /test-drive-forms` - returns forms with related customer, vehicle, location, signature, returnState (+images)
+- `GET /test-drive-forms` - returns forms with related customer, vehicle, signature, returnState (+images)
 - Optional query params for filtering:
   - `status` = `draft|submitted`
   - `brand` = `MERCEDES-BENZ|ANDES MOTOR|STELLANTIS`
   - `customerId` = UUID
   - `vehicleId` = UUID
-  - `locationId` = UUID
   - `vehicleLicensePlate` = partial match (case-insensitive)
   - `vehicleVinNumber` = partial match (case-insensitive)
+  - `vehicleLocation` = partial match (case-insensitive)
 - `GET /test-drive-forms/:id` - same as above for one
 - `GET /test-drive-forms/:id/pdf` - downloads a PDF (Spanish) with customer/vehicle info, signature, and return details (returns `application/pdf`)
 - `POST /test-drive-forms/:id/email` - sends the test drive summary to the customer email (no request body for now; attaches the same PDF as the `/pdf` endpoint)

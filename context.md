@@ -80,7 +80,6 @@ This enum is used by both:
 Feature modules currently present:
 - `customers` (customers table, previously called users)
 - `vehicles`
-- `locations`
 - `digital-signatures`
 - `return-states`
 - `images`
@@ -92,7 +91,7 @@ Feature modules currently present:
 Entities and relationships (see also `API.md` “Models & Relationships”):
 - Customer 1:N TestDriveForm
 - Vehicle 1:N TestDriveForm
-- CurrentLocation 1:N TestDriveForm
+- Vehicle has `location` (string) for the branch/sucursal
 - TestDriveForm has optional 1:1 DigitalSignature (cascades on save)
 - TestDriveForm has optional 1:1 ReturnState (cascades on save)
 - ReturnState has:
@@ -126,7 +125,7 @@ The survey system is versioned and designed for “template + responses”:
 - `TestDriveForm.status`: `draft | submitted`.
 - `TestDriveForm.currentStep`: `CUSTOMER_DATA | VEHICLE_DATA | SIGNATURE_DATA | VALUATION_DATA | VEHICLE_RETURN_DATA | FINAL_CONFIRMATION`.
 - If `status = submitted`, the backend forces `currentStep = FINAL_CONFIRMATION`.
-- A form can be created from zero: `customer`, `vehicle`, and `location` are nullable until they are filled in later steps.
+- A form can be created from zero: `customer` and `vehicle` are nullable until they are filled in later steps.
 - If `currentStep = FINAL_CONFIRMATION`, the backend forces `status = submitted`.
 - On transition to `submitted`, the backend triggers automation:
   - It attempts to create a `SurveyResponse` for the form’s `brand`
@@ -156,7 +155,7 @@ The survey system is versioned and designed for “template + responses”:
   - `pending` was removed from `TestDriveForm.status` (only `draft | submitted` remain).
   - `src/modules/test-drive-forms/test-drive-forms.service.ts` contains an `onModuleInit()` data fix that safely converts legacy `"pending"` rows using a text-cast filter (`"status"::text = 'pending'`) so the app won’t crash even after the DB enum changes.
 - Create-from-zero schema drift:
-  - `customerId`, `vehicleId`, `locationId` were made nullable (entity + DTO).
+  - `customerId` and `vehicleId` were made nullable (entity + DTO).
   - `onModuleInit()` attempts to drop lingering NOT NULL constraints on existing DBs (supports both `customerId` and `customer_id` column naming).
 - `sql-highlight` patch:
   - There is a runtime issue where `typeorm` requires `sql-highlight` which may miss `./escapeHtml`.
@@ -169,7 +168,7 @@ The survey system is versioned and designed for “template + responses”:
 - Shared brand enum exists at `src/common/enums/survey-brand.enum.ts` and is used across surveys and test drive forms.
 - Test drive forms include a `brand` column (enum) and `GET /test-drive-forms` supports filtering via query params.
 - Test drive forms support “wizard” progress via `currentStep` (DB column `current_step`) and enforce `submitted` ↔ `FINAL_CONFIRMATION`.
-- Test drive forms can be created with no `customerId`, `vehicleId`, or `locationId` initially; these can be attached later via PATCH.
+- Test drive forms can be created with no `customerId` or `vehicleId` initially; these can be attached later via PATCH.
 - Surveys include a publishing status (`draft|ready`), and “active survey by brand” endpoints only return `ready` surveys.
 - Survey submission bug previously caused `survey_answers.responseId` to become null; the submit flow avoids that by not re-saving the response entity in a way that breaks relations.
 - Survey response retrieval endpoints include **sanitized customer info only** (id, name, email, phone) and must not leak sensitive fields (e.g., DNI).

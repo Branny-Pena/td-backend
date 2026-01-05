@@ -9,7 +9,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as puppeteer from 'puppeteer';
 import { DigitalSignature } from '../digital-signatures/entities/digital-signature.entity';
-import { CurrentLocation } from '../locations/entities/current-location.entity';
 import { ReturnState } from '../return-states/entities/return-state.entity';
 import { Image, ReturnStateImageRole } from '../images/entities/image.entity';
 import { Vehicle } from '../vehicles/entities/vehicle.entity';
@@ -38,8 +37,6 @@ export class TestDriveFormsService implements OnModuleInit {
     private readonly customersRepository: Repository<Customer>,
     @InjectRepository(Vehicle)
     private readonly vehiclesRepository: Repository<Vehicle>,
-    @InjectRepository(CurrentLocation)
-    private readonly locationsRepository: Repository<CurrentLocation>,
     @InjectRepository(DigitalSignature)
     private readonly signaturesRepository: Repository<DigitalSignature>,
     @InjectRepository(ReturnState)
@@ -68,7 +65,7 @@ export class TestDriveFormsService implements OnModuleInit {
           FROM information_schema.columns
           WHERE table_schema = 'public'
             AND table_name = 'test_drive_forms'
-            AND column_name IN ('customerId','vehicleId','locationId','customer_id','vehicle_id','location_id')
+            AND column_name IN ('customerId','vehicleId','customer_id','vehicle_id')
         `,
         );
 
@@ -82,10 +79,8 @@ export class TestDriveFormsService implements OnModuleInit {
 
       await dropNotNullIfNeeded('customerId');
       await dropNotNullIfNeeded('vehicleId');
-      await dropNotNullIfNeeded('locationId');
       await dropNotNullIfNeeded('customer_id');
       await dropNotNullIfNeeded('vehicle_id');
-      await dropNotNullIfNeeded('location_id');
     } catch (err) {
       this.logger.warn(`Could not relax test_drive_forms FK nullability: ${String(err)}`);
     }
@@ -268,14 +263,6 @@ export class TestDriveFormsService implements OnModuleInit {
     return vehicle;
   }
 
-  private async loadLocation(id: string): Promise<CurrentLocation> {
-    const location = await this.locationsRepository.findOne({ where: { id } });
-    if (!location) {
-      throw new NotFoundException(`Location ${id} not found`);
-    }
-    return location;
-  }
-
   private buildReturnState(payload?: CreateTestDriveFormDto['returnState']) {
     if (!payload) return null;
     const returnState = this.returnStatesRepository.create();
@@ -283,10 +270,9 @@ export class TestDriveFormsService implements OnModuleInit {
   }
 
   async create(dto: CreateTestDriveFormDto): Promise<TestDriveForm> {
-    const [customer, vehicle, location] = await Promise.all([
+    const [customer, vehicle] = await Promise.all([
       dto.customerId ? this.loadCustomer(dto.customerId) : Promise.resolve(null),
       dto.vehicleId ? this.loadVehicle(dto.vehicleId) : Promise.resolve(null),
-      dto.locationId ? this.loadLocation(dto.locationId) : Promise.resolve(null),
     ]);
 
     const signature = dto.signatureData
@@ -305,7 +291,6 @@ export class TestDriveFormsService implements OnModuleInit {
       brand: dto.brand ?? this.getDefaultSurveyBrand(),
       customer,
       vehicle,
-      location,
       signature,
       purchaseProbability: dto.purchaseProbability ?? null,
       estimatedPurchaseDate: dto.estimatedPurchaseDate ?? null,
@@ -337,7 +322,6 @@ export class TestDriveFormsService implements OnModuleInit {
       .createQueryBuilder('form')
       .leftJoinAndSelect('form.customer', 'customer')
       .leftJoinAndSelect('form.vehicle', 'vehicle')
-      .leftJoinAndSelect('form.location', 'location')
       .leftJoinAndSelect('form.signature', 'signature')
       .leftJoinAndSelect('form.returnState', 'returnState')
       .leftJoinAndSelect('returnState.images', 'returnStateImages')
@@ -362,9 +346,9 @@ export class TestDriveFormsService implements OnModuleInit {
     if (query?.vehicleId) {
       qb.andWhere('vehicle.id = :vehicleId', { vehicleId: query.vehicleId });
     }
-    if (query?.locationId) {
-      qb.andWhere('location.id = :locationId', {
-        locationId: query.locationId,
+    if (query?.vehicleLocation) {
+      qb.andWhere('vehicle.location ILIKE :location', {
+        location: `%${query.vehicleLocation.trim()}%`,
       });
     }
     if (query?.vehicleLicensePlate) {
@@ -387,7 +371,6 @@ export class TestDriveFormsService implements OnModuleInit {
       relations: [
         'customer',
         'vehicle',
-        'location',
         'signature',
         'returnState',
         'returnState.images',
@@ -424,12 +407,6 @@ export class TestDriveFormsService implements OnModuleInit {
     }
     if (dto.vehicleId === null) {
       form.vehicle = null;
-    }
-    if (dto.locationId) {
-      form.location = await this.loadLocation(dto.locationId);
-    }
-    if (dto.locationId === null) {
-      form.location = null;
     }
     if (dto.signatureData !== undefined) {
       if (form.signature) {
@@ -514,7 +491,6 @@ export class TestDriveFormsService implements OnModuleInit {
       relations: [
         'customer',
         'vehicle',
-        'location',
         'signature',
         'returnState',
         'returnState.images',
@@ -529,7 +505,6 @@ export class TestDriveFormsService implements OnModuleInit {
 
     const customer = form.customer;
     const vehicle = form.vehicle;
-    const location = form.location;
 
     const escapeHtml = (value: unknown) => {
       const str = (() => {
@@ -727,7 +702,7 @@ export class TestDriveFormsService implements OnModuleInit {
 	          customer?.email ?? '',
 	        )}</div></div>
 	        <div class="row"><div class="label">Sede / Ubicación</div><div class="value">${escapeHtml(
-	          location?.locationName ?? '',
+	          vehicle?.location ?? '',
 	        )}</div></div>
 	      </div>
 	    </div>
